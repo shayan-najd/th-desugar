@@ -27,7 +27,7 @@ module Language.Haskell.TH.Desugar (
   DTyVarBndr(..), DMatch(..), DClause(..), DDec(..), NewOrData(..),
   DCon(..), DConFields(..), DStrictType, DVarStrictType, DForeign(..),
   DPragma(..), DRuleBndr(..), DTySynEqn(..), DInfo(..), DInstanceDec,
-  Role(..), AnnTarget(..),
+  Role(..), AnnTarget(..),MExp(..),
 
   -- * The 'Desugar' class
   Desugar(..),
@@ -40,11 +40,14 @@ module Language.Haskell.TH.Desugar (
 
   -- ** Secondary desugaring functions
   PatM, dsPred, dsPat, dsDec, dsLetDec,
-  dsMatches, dsBody, dsGuards, dsDoStmts, dsComp, dsClauses, 
+  dsMatches, dsBody, dsGuards, dsDoStmts, dsComp, dsClauses,
+
+  -- * Further desugaring functions for MiniCore
+  dsDExp,
 
   -- * Converting desugared AST back to TH AST
   module Language.Haskell.TH.Desugar.Sweeten,
-  
+
   -- * Expanding type synonyms
   expand, expandType,
 
@@ -69,12 +72,13 @@ module Language.Haskell.TH.Desugar (
   substTy,
   tupleDegree_maybe, tupleNameDegree_maybe,
   unboxedTupleDegree_maybe, unboxedTupleNameDegree_maybe,
-  
+
   -- ** Extracting bound names
   extractBoundNamesStmt, extractBoundNamesDec, extractBoundNamesPat
   ) where
 
 import Language.Haskell.TH.Desugar.Core
+import Language.Haskell.TH.Desugar.MiniCore
 import Language.Haskell.TH.Desugar.Util
 import Language.Haskell.TH.Desugar.Sweeten
 import Language.Haskell.TH.Syntax
@@ -88,6 +92,8 @@ import Data.Foldable ( foldMap )
 #endif
 import Prelude hiding ( exp )
 
+import Control.Monad
+
 -- | This class relates a TH type with its th-desugar type and allows
 -- conversions back and forth. The functional dependency goes only one
 -- way because `Type` and `Kind` are type synonyms, but they desugar
@@ -99,6 +105,10 @@ class Desugar th ds | ds -> th where
 instance Desugar Exp DExp where
   desugar = dsExp
   sweeten = expToTH
+
+instance Desugar Exp MExp where
+  desugar = dsDExp <=< dsExp
+  sweeten = expToTH . mexpToDExp
 
 instance Desugar Type DType where
   desugar = dsType
@@ -156,7 +166,7 @@ flattenDValD (DValD pat exp) = do
         DTildePa pa -> DTildePa (wildify name y pa)
         DBangPa pa -> DBangPa (wildify name y pa)
         DWildPa -> DWildPa
-                
+
 flattenDValD other_dec = return [other_dec]
 
 extractBoundNamesDPat :: DPat -> S.Set Name
@@ -211,7 +221,7 @@ getRecordSelectors arg_ty (DCon _ _ con_name (DRecC fields)) = do
                             (DVarE varName)] ]
     | ((name, _strict, res_ty), n) <- zip fields [0..]
     , fvDType res_ty `S.isSubsetOf` tvbs   -- exclude "naughty" selectors
-    ] 
+    ]
 
   where
     mk_field_pats :: Int -> Int -> Name -> [DPat]
