@@ -58,8 +58,9 @@ dsDExp ee = case ee of
                                      return (p , e')
                                 | DMatch p e <- ms]
   DStaticE _     -> fail "Static Expressions are not supported!"
-  DLetE [DValD (DVarPa x) m] n -> MLetE x <$> dsDExp m <*> dsDExp n
-  DLetE _                    _ -> dsDExp =<< dsDLetDecAll ee
+  DLetE [DValD (DVarPa x) m] n
+      | not (x `Set.member` freeVars m) -> MLetE x <$> dsDExp m <*> dsDExp n
+  DLetE _  _     -> dsDExp =<< depAnalysis =<< dsDLetDecAll ee
 
 isInfixD :: DLetDec -> Bool
 isInfixD (DInfixD _ _) = True
